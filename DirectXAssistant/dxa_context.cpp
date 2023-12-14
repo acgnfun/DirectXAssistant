@@ -60,21 +60,10 @@ DXAContext::~DXAContext()
 	Uninitialize();
 }
 
-void DXAContext::Initialize(HWND hWnd)
+void DXAContext::Initialize(DXADevice* Device, HWND hWnd)
 {
-	D3D_FEATURE_LEVEL featureLevels[] =
-	{
-	D3D_FEATURE_LEVEL_11_1,
-	D3D_FEATURE_LEVEL_11_0,
-	D3D_FEATURE_LEVEL_10_1,
-	D3D_FEATURE_LEVEL_10_0,
-	D3D_FEATURE_LEVEL_9_3,
-	D3D_FEATURE_LEVEL_9_2,
-	D3D_FEATURE_LEVEL_9_1
-	};
+	pDevice = Device;
 	handle_hWnd = hWnd;
-	D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, featureLevels, ARRAYSIZE(featureLevels), D3D11_SDK_VERSION, &p3Device, &currentLevel, &p3DContext);
-	p3Device->QueryInterface(&pDXGIDevice);
 	DXGI_SWAP_CHAIN_DESC1 swapChainDesc = { 0 };
 	swapChainDesc.Width = 0;
 	swapChainDesc.Height = 0;
@@ -87,11 +76,9 @@ void DXAContext::Initialize(HWND hWnd)
 	swapChainDesc.Scaling = DXGI_SCALING_NONE;
 	swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
 	swapChainDesc.Flags = 0;
-	pDXGIDevice->GetAdapter(&pDXGIAdapter);
-	pDXGIAdapter->GetParent(IID_PPV_ARGS(&pDXGIFactory));
-	pDXGIFactory->CreateSwapChainForHwnd(p3Device, hWnd, &swapChainDesc, nullptr, nullptr, &pDXGISwapChain);
+	pDevice->DXGIFactory()->CreateSwapChainForHwnd(pDevice->D3Device(), hWnd, &swapChainDesc, nullptr, nullptr, &pDXGISwapChain);
 	pDXGISwapChain->ResizeBuffers(2, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), DXGI_FORMAT_UNKNOWN, 0);
-	pDXGIDevice->SetMaximumFrameLatency(1);
+	pDevice->DXGIDevice()->SetMaximumFrameLatency(1);
 	//pDXGISwapChain->GetBuffer(0, IID_PPV_ARGS(&p3DTexture2D));
 	bitmapProperties =
 		D2D1::BitmapProperties1(
@@ -102,7 +89,7 @@ void DXAContext::Initialize(HWND hWnd)
 		);
 	pDXGISwapChain->GetBuffer(0, IID_PPV_ARGS(&pDXGISurface));
 	D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &p2DFactory);
-	p2DFactory->CreateDevice(pDXGIDevice, &p2Device);
+	p2DFactory->CreateDevice(pDevice->DXGIDevice(), &p2Device);
 	p2Device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &p2DContext);
 	p2DContext->CreateBitmapFromDxgiSurface(pDXGISurface, bitmapProperties, &pDrawBitmap);
 	p2DContext->SetTarget(pDrawBitmap);
@@ -116,10 +103,6 @@ void DXAContext::Uninitialize()
 	if (p2DFactory) p2DFactory->Release();
 	if (pDXGISurface) pDXGISurface->Release();
 	if (pDXGISwapChain) pDXGISwapChain->Release();
-	if (pDXGIAdapter) pDXGIAdapter->Release();
-	if (pDXGIDevice) pDXGIDevice->Release();
-	if (pDXGIFactory) pDXGIFactory->Release();
-	if (p3Device) p3Device->Release();
 	ZeroData();
 }
 
@@ -182,27 +165,27 @@ HWND DXAContext::hWnd()
 	return handle_hWnd;
 }
 
-ID3D11Device* DXAContext::D3Device()
+ID3D11Device* DXADevice::D3Device()
 {
 	return p3Device;
 }
 
-ID3D11DeviceContext* DXAContext::D3DContext()
+ID3D11DeviceContext* DXADevice::D3DContext()
 {
 	return p3DContext;
 }
 
-IDXGIDevice3* DXAContext::DXGIDevice()
+IDXGIDevice3* DXADevice::DXGIDevice()
 {
 	return pDXGIDevice;
 }
 
-IDXGIAdapter* DXAContext::DXGIAdapter()
+IDXGIAdapter* DXADevice::DXGIAdapter()
 {
 	return pDXGIAdapter;
 }
 
-IDXGIFactory2* DXAContext::DXGIFactory()
+IDXGIFactory2* DXADevice::DXGIFactory()
 {
 	return pDXGIFactory;
 }
@@ -227,27 +210,27 @@ DXAContext::operator HWND()
 	return handle_hWnd;
 }
 
-DXAContext::operator ID3D11Device* ()
+DXADevice::operator ID3D11Device* ()
 {
 	return p3Device;
 }
 
-DXAContext::operator ID3D11DeviceContext* ()
+DXADevice::operator ID3D11DeviceContext* ()
 {
 	return p3DContext;
 }
 
-DXAContext::operator IDXGIDevice3* ()
+DXADevice::operator IDXGIDevice3* ()
 {
 	return pDXGIDevice;
 }
 
-DXAContext::operator IDXGIAdapter* ()
+DXADevice::operator IDXGIAdapter* ()
 {
 	return pDXGIAdapter;
 }
 
-DXAContext::operator IDXGIFactory2* ()
+DXADevice::operator IDXGIFactory2* ()
 {
 	return pDXGIFactory;
 }
@@ -272,14 +255,55 @@ void DXAContext::ZeroData()
 	p2DContext = nullptr;
 	p2Device = nullptr;
 	p2DFactory = nullptr;
+	pDXGISurface = nullptr;
+	pDXGISwapChain = nullptr;
+	pDrawBitmap = nullptr;
+	bitmapProperties = D2D1_BITMAP_PROPERTIES1();
+}
+
+DXADevice::DXADevice()
+{
+	ZeroData();
+}
+
+DXADevice::~DXADevice()
+{
+	Uninitialize();
+}
+
+void DXADevice::Initialize()
+{
+	D3D_FEATURE_LEVEL featureLevels[] =
+	{
+	D3D_FEATURE_LEVEL_11_1,
+	D3D_FEATURE_LEVEL_11_0,
+	D3D_FEATURE_LEVEL_10_1,
+	D3D_FEATURE_LEVEL_10_0,
+	D3D_FEATURE_LEVEL_9_3,
+	D3D_FEATURE_LEVEL_9_2,
+	D3D_FEATURE_LEVEL_9_1
+	};
+	D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, featureLevels, ARRAYSIZE(featureLevels), D3D11_SDK_VERSION, &p3Device, &currentLevel, &p3DContext);
+	p3Device->QueryInterface(&pDXGIDevice);
+	pDXGIDevice->GetAdapter(&pDXGIAdapter);
+	pDXGIAdapter->GetParent(IID_PPV_ARGS(&pDXGIFactory));
+}
+
+void DXADevice::Uninitialize()
+{
+	if (pDXGIAdapter) pDXGIAdapter->Release();
+	if (pDXGIDevice) pDXGIDevice->Release();
+	if (pDXGIFactory) pDXGIFactory->Release();
+	if (p3Device) p3Device->Release();
+	ZeroData();
+}
+
+void DXADevice::ZeroData()
+{
 	p3DContext = nullptr;
 	p3Device = nullptr;
 	pDXGIAdapter = nullptr;
 	pDXGIDevice = nullptr;
 	pDXGIFactory = nullptr;
-	pDXGISurface = nullptr;
-	pDXGISwapChain = nullptr;
-	pDrawBitmap = nullptr;
 	currentLevel = D3D_FEATURE_LEVEL();
-	bitmapProperties = D2D1_BITMAP_PROPERTIES1();
 }
