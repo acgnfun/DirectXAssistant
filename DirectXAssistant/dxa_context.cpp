@@ -25,6 +25,31 @@ static D2D1_RECT_F CalcBitmapFillRect(D2D1_RECT_F bitmapRect, D2D1_RECT_F target
 	return rR;
 }
 
+// 计算位图的放置区域以保证位图在绘制到指定位置时不会拉伸
+static D2D1_RECT_F CalcBitmapPutRect(D2D1_RECT_F bitmapRect, D2D1_RECT_F targetRect)
+{
+	FLOAT xS = targetRect.right - targetRect.left; // xBitmap
+	FLOAT yS = targetRect.bottom - targetRect.top; // yBitmap
+	FLOAT rS = xS / yS;
+	FLOAT xB = bitmapRect.right - bitmapRect.left; // xScreen
+	FLOAT yB = bitmapRect.bottom - bitmapRect.top; // yScreen
+	FLOAT rB = xB / yB;
+	D2D1_RECT_F rR = targetRect;
+	if (rS > rB)
+	{
+		xS = yS * rB;
+		rR.left = (rR.left + rR.right - xS) / 2;
+		rR.right = rR.left + xS;
+	}
+	else if (rS < rB)
+	{
+		yS = xS / rB;
+		rR.top = (rR.top + rR.bottom - yS) / 2;
+		rR.bottom = rR.top + yS;
+	}
+	return rR;
+}
+
 DXAContext::DXAContext()
 {
 	ZeroData();
@@ -130,8 +155,26 @@ void DXAContext::FillBitmap(ID2D1Bitmap* pBitmap, D2D1_RECT_F dstRect, D2D1_RECT
 	p2DContext->DrawBitmap(pBitmap, dstRect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, srcRect);
 }
 
+void DXAContext::PutBitmap(ID2D1Bitmap* pBitmap, D2D1_RECT_F dstRect, D2D1_RECT_F srcRect)
+{
+	if (srcRect.left == 0 && srcRect.right == 0 && srcRect.top == 0 && srcRect.bottom == 0)
+	{
+		srcRect.right = pBitmap->GetSize().width;
+		srcRect.bottom = pBitmap->GetSize().height;
+	}
+	dstRect = CalcBitmapPutRect(srcRect, dstRect);
+	p2DContext->DrawBitmap(pBitmap, dstRect, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, srcRect);
+}
+
 void DXAContext::DrawProgress(D2D1_RECT_F Rect, float Percentage, D2D1_COLOR_F BackColor, D2D1_COLOR_F FrontColor)
 {
+	ID2D1SolidColorBrush* pBrush = nullptr;
+	Rect.right = Rect.left + ((Rect.right - Rect.left) * Percentage);
+	p2DContext->CreateSolidColorBrush(FrontColor, &pBrush);
+	if (!pBrush) return;
+	p2DContext->FillRectangle(Rect, pBrush);
+	pBrush->Release();
+	pBrush = nullptr;
 }
 
 HWND DXAContext::hWnd()
